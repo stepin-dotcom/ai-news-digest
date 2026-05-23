@@ -212,6 +212,18 @@ def write_pages(items, sms_text):
     return f"{base}/{SITE_DIR}/{today}.html" if base else page_path
 
 
+def _gmail_creds():
+    """Read Gmail credentials, normalizing whitespace.
+
+    Gmail shows the 16-char app password with spaces between groups; copy/paste
+    sometimes introduces NBSP (\\xa0) characters that break smtplib's ASCII auth.
+    Stripping all whitespace makes this robust to whichever flavor was pasted.
+    """
+    user = os.environ["GMAIL_USER"].strip()
+    password = "".join(os.environ["GMAIL_APP_PASSWORD"].split())
+    return user, password
+
+
 def _smtp_send(from_addr, password, to_list, msg):
     with smtplib.SMTP("smtp.gmail.com", 587) as server:
         server.starttls()
@@ -226,8 +238,7 @@ def send_sms(message):
         AT&T:     <number>@mms.att.net  (MMS, longer messages)
         T-Mobile: <number>@tmomail.net  (handles both)
     """
-    gmail_user = os.environ["GMAIL_USER"]
-    gmail_app_password = os.environ["GMAIL_APP_PASSWORD"]
+    gmail_user, gmail_app_password = _gmail_creds()
     recipients = [g.strip() for g in os.environ["SMS_GATEWAYS"].split(",") if g.strip()]
 
     msg = MIMEText(message)
@@ -240,8 +251,7 @@ def send_sms(message):
 
 def send_email_digest(items, sms_text):
     """Send a richer HTML email to GMAIL_USER with the SMS digest + every fetched item."""
-    gmail_user = os.environ["GMAIL_USER"]
-    gmail_app_password = os.environ["GMAIL_APP_PASSWORD"]
+    gmail_user, gmail_app_password = _gmail_creds()
     today = datetime.now().strftime("%a %b %-d")
 
     # Group items by source for the long version
