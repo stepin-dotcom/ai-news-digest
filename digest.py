@@ -1,11 +1,14 @@
-"""Daily SMS digest of AWS AI, ChatGPT/OpenAI, and AI-agents news.
+"""Daily digest of AWS AI, ChatGPT/OpenAI, and AI-agents news.
 
-Delivery via carrier email-to-SMS gateways (free) sent through Gmail SMTP.
+Delivery: Telegram bot (push notification on phone) + HTML email backup via Gmail SMTP.
 """
 
 import html
+import json
 import os
 import smtplib
+import urllib.parse
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -231,22 +234,26 @@ def _smtp_send(from_addr, password, to_list, msg):
         server.sendmail(from_addr, to_list, msg.as_string())
 
 
-def send_sms(message):
-    """Send via Gmail SMTP to one or more carrier email-to-SMS gateways.
+def send_telegram(message):
+    """Send a message to the configured Telegram chat via the Bot API.
 
-    SMS_GATEWAYS: comma-separated, e.g. "5551234567@mms.att.net,5559876543@tmomail.net"
-        AT&T:     <number>@mms.att.net  (MMS, longer messages)
-        T-Mobile: <number>@tmomail.net  (handles both)
+    Required env: TELEGRAM_BOT_TOKEN (from @BotFather), TELEGRAM_CHAT_ID (from getUpdates).
     """
-    gmail_user, gmail_app_password = _gmail_creds()
-    recipients = [g.strip() for g in os.environ["SMS_GATEWAYS"].split(",") if g.strip()]
-
-    msg = MIMEText(message)
-    msg["Subject"] = ""
-    msg["From"] = gmail_user
-    msg["To"] = ", ".join(recipients)
-
-    _smtp_send(gmail_user, gmail_app_password, recipients, msg)
+    token = os.environ["TELEGRAM_BOT_TOKEN"].strip()
+    chat_id = os.environ["TELEGRAM_CHAT_ID"].strip()
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    data = urllib.parse.urlencode(
+        {
+            "chat_id": chat_id,
+            "text": message,
+            "disable_web_page_preview": "true",  # avoid noisy link previews on every URL
+        }
+    ).encode()
+    req = urllib.request.Request(url, data=data)
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        result = json.load(resp)
+    if not result.get("ok"):
+        raise RuntimeError(f"Telegram API error: {result}")
 
 
 def send_email_digest(items, sms_text):
@@ -301,9 +308,9 @@ def main():
     url = write_pages(items, digest)
     print(f"Wrote page: {url}")
 
-    sms_with_link = f"{digest}\n\nFull: {url}" if url.startswith("http") else digest
-    send_sms(sms_with_link)
-    print("SMS sent.")
+    message = f"{digest}\n\nFull: {url}" if url.startswith("http") else digest
+    send_telegram(message)
+    print("Telegram sent.")
 
     send_email_digest(items, digest)
     print("Email sent.")
